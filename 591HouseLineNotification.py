@@ -70,7 +70,7 @@ for pn, page in enumerate(pageInfo):
     soup = BeautifulSoup(response.text, "html.parser")
 
 # 取得所有租屋訊息
-  listInfoDiv = soup.find_all("div", {"data-v-1d72fa0c": True}, class_="item")
+  listInfoDiv = soup.find_all("div", class_="item")
   #print("listInfoDiv", listInfoDiv)
   num = 0
   for div in listInfoDiv:
