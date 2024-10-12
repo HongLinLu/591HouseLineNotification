@@ -12,7 +12,6 @@ import requests
 import bs4
 from bs4 import BeautifulSoup
 import re
-import os
 # print("emoji version:", emoji.__version__)
 # print("requests version:", requests.__version__)
 # print("beautifulsoup4 version:", bs4.__version__)
@@ -39,7 +38,8 @@ def lineNotifyMessage(msg, imgUrl):
 
 # 取得591租屋資訊
 #要抓取頁面的Url
-url = "https://rent.591.com.tw/list?kind=1&region=1&price=10000$_30000$&layout=1&other=pet,cook&sort=posttime_desc&option=cold,washer,icebox,bed&notice=not_cover"
+url = "https://rent.591.com.tw/list?kind=1&region=1&price=10000$_30000$&layout=1,2,3&other=pet,cook&sort=posttime_desc&option=cold,washer,icebox,bed&notice=not_cover"
+
 #自訂 Request Headers
 headers = {
     "Accept" : "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
@@ -74,17 +74,7 @@ for pn, page in enumerate(pageInfo):
     response = requests.get(url=new_url, headers=headers)
     soup = BeautifulSoup(response.text, "html.parser")
 
-# 檢查並創建保存過去發送過的詳細URL的檔案
-  sent_urls_file = "sent_urls.txt"
-  if not os.path.exists(sent_urls_file):
-      with open(sent_urls_file, "w") as f:
-          pass  # 如果檔案不存在，創建一個空的檔案
-
-  # 讀取已經發送過的詳細URL
-  with open(sent_urls_file, "r") as f:
-      sent_urls = set(f.read().splitlines())
-
-  # 取得所有租屋訊息
+# 取得所有租屋訊息
   listInfoDiv = soup.find_all("div", class_="item")
   # print("listInfoDiv", listInfoDiv)
   num = 0
@@ -105,12 +95,15 @@ for pn, page in enumerate(pageInfo):
       # 詳細資訊的 URL
       detailUrl = div.find("a").get("href")
 
-      # 如果這個URL已經發送過，則跳過
-      if detailUrl in sent_urls:
-          continue
-
       # 價格
-      price = div.find('strong', class_="text-26px font-arial").getText() + " 元/月"
+      # 找到 strong 標籤 所有的 i 標籤
+      price_elements = div.find('strong', class_="text-26px font-arial").find_all('i')
+
+      # 提取 i 標籤中的文字，並按照 order 屬性排序
+      price_numbers = sorted(price_elements, key=lambda x: int(x['style'].split('order:')[1].split(';')[0]))
+
+      # 組合數字
+      price = ''.join([num.get_text() for num in price_numbers]) + " 元/月"
       # print("price:", price)
 
       # 標籤
@@ -123,21 +116,47 @@ for pn, page in enumerate(pageInfo):
       # print("tag_list:", tag_list)
 
       # 住家資訊
+      # 住家資訊
       houseDetail = ""
       details = div.find_all("div", class_="item-info-txt")
       details_len = len(details)
+
       for j, detail in enumerate(details):
-        de = detail.find_all("span") + detail.find_all("strong")
-        # 取得長度
-        de_len = len(de)
-        for i, d in enumerate(de):
-            if i == de_len - 1:
-              houseDetail += d.getText().replace(" ", "").replace("\n", "")
-            else:
-              houseDetail += d.getText().replace(" ", "").replace("\n", "") + " | "
-        # 資訊換行
-        if j != details_len - 1:
-          houseDetail += "\n      "
+          # 找到所有 span 元素
+          spans = detail.find_all("span")
+
+          # 提取每個 span 中的內容
+          for element in spans:
+
+              # 如果這個 span 自身具有 style="display:inline-flex;"，則跳過處理
+              if element.get('style') == "display:inline-flex;":
+                  continue
+
+              # 檢查是否存在 inline-flex 結構 (即內含 <i> 標籤的數字部分)
+              inline_flex = element.find('span', style="display:inline-flex;")
+
+              if inline_flex:
+                  # 找到所有 i 標籤，並按照 order 屬性進行排序
+                  ordered_elements = inline_flex.find_all('i')
+                  ordered_elements_sorted = sorted(ordered_elements, key=lambda x: int(x['style'].split('order:')[1].split(';')[0]))
+
+                  # 組合排序後的內容
+                  value = ''.join([el.get_text() for el in ordered_elements_sorted])
+                  houseDetail += value
+              else:
+                  # 如果沒有 inline-flex 結構，直接提取文字
+                  houseDetail += element.get_text().replace(" ", "").replace("\n", "")
+
+              # 為了避免重複顯示，例如坪數重複的情況，確認當前的元素是否有 "line" class，若有則需要加上分隔符
+              if "line" in element.get("class", []):
+                  houseDetail += " | "
+
+          # 移除最後一個 " | " 並換行
+          houseDetail = houseDetail.rstrip(" | ")
+
+          # 如果不是最後一個 detail，則換行
+          if j != details_len - 1:
+              houseDetail += "\n      "
       # print("houseDetail", houseDetail)
 
       # 更新時間點
@@ -175,10 +194,6 @@ for pn, page in enumerate(pageInfo):
                   # print(msg)
                   # print('-------------')
 
-                  # 將該URL保存到txt檔案中
-                  with open(sent_urls_file, "a") as f:
-                      f.write(detailUrl + "\n")
-
           elif len(minute_pattern.findall(uptime)) > 0:
               # 處理「分鐘內更新」
               minute_pattern = re.compile('(.*)(?=分鐘)')
@@ -197,7 +212,3 @@ for pn, page in enumerate(pageInfo):
                   # 印出要傳送的 LINE 訊息
                   # print(msg)
                   # print('-------------')
-
-                  # 將該URL保存到txt檔案中
-                  with open(sent_urls_file, "a") as f:
-                      f.write(detailUrl + "\n")
